@@ -3,19 +3,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 from app.cv_engine import detect_walls_from_image
+from app.ocr_engine import extract_room_labels
 
 app = FastAPI(title="FloorPlan3D Computer Vision API")
 
-# Enable CORS so your frontend development server can fetch data
+# Enable CORS parameters for Next.js app communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, restrict this to your frontend URL
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Pydantic data schemas to validate coordinates sent back to Three.js
+# Coordinates Data Schemas
 class Point2D(BaseModel):
     x: float
     y: float
@@ -24,9 +25,15 @@ class WallSegment(BaseModel):
     start: Point2D
     end: Point2D
 
+class RoomLabel(BaseModel):
+    text: str
+    position: Point2D
+
+# Unified Response Object Schema
 class DetectionResponse(BaseModel):
     success: bool
     walls: List[WallSegment]
+    labels: List[RoomLabel]
 
 @app.get("/")
 def read_root():
@@ -35,17 +42,24 @@ def read_root():
 @app.post("/api/auto-detect", response_model=DetectionResponse)
 async def auto_detect_floorplan(file: UploadFile = File(...)):
     """
-    Receives an uploaded floor plan image, passes it down to the OpenCV 
-    matrix pipelines, and returns clean coordinate lists.
+    Receives an uploaded floor plan image, processes vectors through 
+    OpenCV, captures room layout labels via Tesseract OCR, and yields 
+    a unified response object.
     """
     try:
-        # Read the raw file stream into memory
+        # Read file payload safely into buffer streams
         contents = await file.read()
         
-        # Execute the computer vision line processing
+        # 1. Pipeline execution layers
         detected_walls = detect_walls_from_image(contents)
+        detected_labels = extract_room_labels(contents)
         
-        return DetectionResponse(success=True, walls=detected_walls)
+        # 2. Return data vectors matching our schema interface specifications
+        return DetectionResponse(
+            success=True, 
+            walls=detected_walls,
+            labels=detected_labels
+        )
     except Exception as e:
-        print(f"Server Error during parsing: {str(e)}")
-        return DetectionResponse(success=False, walls=[])
+        print(f"Server Error during parsing pipeline execution: {str(e)}")
+        return DetectionResponse(success=False, walls=[], labels=[])
