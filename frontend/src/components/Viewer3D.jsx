@@ -6,7 +6,6 @@ import { OrbitControls, Grid } from '@react-three/drei';
 function ArchitecturalWall({ wall, isHovered, onHover, onUnhover }) {
   const { start, end } = wall;
 
-  // Recenter coordinates around Three.js viewport center points
   const startX = start.x - 300;
   const startZ = start.y - 250;
   const endX = end.x - 300;
@@ -14,27 +13,22 @@ function ArchitecturalWall({ wall, isHovered, onHover, onUnhover }) {
 
   const dx = endX - startX;
   const dz = endZ - startZ;
-  const wallLength = Math.hypot(dx, dz);
+  const length = Math.hypot(dx, dz);
 
   const wallHeight = 35;
-  const wallThickness = 6; 
-
-  const midX = (startX + endX) / 2;
-  const midZ = (startZ + endZ) / 2;
-  const posY = wallHeight / 2; 
-  const angleY = Math.atan2(dz, dx);
+  const wallThickness = 7;
 
   return (
     <mesh 
-      position={[midX, posY, midZ]} 
-      rotation={[0, -angleY, 0]}
+      position={[(startX + endX) / 2, wallHeight / 2, (startZ + endZ) / 2]} 
+      rotation={[0, -Math.atan2(dz, dx), 0]}
       onPointerOver={(e) => { e.stopPropagation(); onHover(); }}
       onPointerOut={() => onUnhover()}
     >
-      <boxGeometry args={[wallLength, wallHeight, wallThickness]} />
+      <boxGeometry args={[length, wallHeight, wallThickness]} />
       <meshStandardMaterial 
-        color={isHovered ? "#6366f1" : "#e2e8f0"} 
-        roughness={0.4} 
+        color={isHovered ? "#4f46e5" : "#f1f5f9"} 
+        roughness={0.3} 
         metalness={0.1} 
       />
     </mesh>
@@ -42,53 +36,49 @@ function ArchitecturalWall({ wall, isHovered, onHover, onUnhover }) {
 }
 
 export default function Viewer3D({ walls }) {
-  const [hoveredWall, setHoveredWall] = useState(null);
+  const [hoveredIdx, setHoveredIdx] = useState(null);
 
   return (
-    <div className="flex flex-col items-center bg-white p-4 rounded-xl shadow-md border border-gray-100 w-full h-full">
-      <div className="flex items-center justify-between w-full mb-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
-          Continuous 3D Architectural Model
-        </h2>
+    <div className="flex flex-col items-center bg-white p-5 rounded-2xl border border-slate-100 shadow-sm h-full w-full">
+      <div className="flex items-center justify-between w-full mb-4">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">3D Composite Spatial Engine</h2>
       </div>
 
-      <div className="w-full h-[500px] bg-slate-900 rounded-lg overflow-hidden border border-slate-800 shadow-inner">
-        <Canvas camera={{ position: [150, 300, 350], fov: 45 }}>
-          <ambientLight intensity={1.3} />
-          <directionalLight position={[200, 400, 250]} intensity={1.6} castShadow />
-          <pointLight position={[-200, 200, -200]} intensity={0.5} />
+      <div className="w-full h-[544px] bg-slate-950 rounded-xl overflow-hidden border border-slate-900 shadow-inner relative group">
+        <Canvas camera={{ position: [200, 320, 400], fov: 42 }}>
+          <ambientLight intensity={1.5} />
+          <directionalLight position={[300, 500, 200]} intensity={1.8} castShadow />
+          <pointLight position={[-300, 200, -300]} intensity={0.6} />
 
-          {/* Render continuous interconnected panels */}
           {walls.map((wall, idx) => (
             <ArchitecturalWall 
               key={idx} 
               wall={wall} 
-              isHovered={hoveredWall === idx}
-              onHover={() => setHoveredWall(idx)}
-              onUnhover={() => setHoveredWall(null)}
+              isHovered={hoveredIdx === idx}
+              onHover={() => setHoveredIdx(idx)}
+              onUnhover={() => setHoveredIdx(null)}
             />
           ))}
 
           <Grid
-            renderOrder={-1}
-            position={[0, -0.1, 0]}
-            args={[1000, 1000]}
-            cellSize={20}
-            cellThickness={1}
-            cellColor="#334155"
+            position={[0, -0.05, 0]}
+            args={[1200, 1200]}
+            cellSize={25}
+            cellThickness={0.8}
+            cellColor="#1e293b"
             sectionSize={100}
-            sectionThickness={1.5}
-            sectionColor="#475569"
-            fadeDistance={800}
+            sectionThickness={1.2}
+            sectionColor="#334155"
+            fadeDistance={700}
           />
 
           <OrbitControls 
             enableDamping 
-            dampingFactor={0.05}
-            minDistance={50}
-            maxDistance={800}
-            autoRotate={true}
-            autoRotateSpeed={0.5} 
+            dampingFactor={0.06}
+            minDistance={60}
+            maxDistance={900}
+            autoRotate={walls.length > 0}
+            autoRotateSpeed={0.4}
             maxPolarAngle={Math.PI / 2.1} 
           />
         </Canvas>

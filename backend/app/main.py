@@ -1,65 +1,60 @@
-from fastapi import FastAPI, UploadFile, File
+import os
+import uuid
+from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List
-from app.cv_engine import detect_walls_from_image
-from app.ocr_engine import extract_room_labels
+from typing import Optional
+import uvicorn
 
-app = FastAPI(title="FloorPlan3D Computer Vision API")
+from app.cv_engine import process_blueprint
 
-# Enable CORS parameters for Next.js app communication
+app = FastAPI(title="Architectural AI Extrusion Engine", version="1.0.0")
+
+# CORS: configurable for local dev + production.
+# - Set CORS_ORIGINS="http://localhost:3000,https://your-domain.com"
+# - If missing, allow localhost:3000 by default.
+_default_origins = ["http://localhost:3000"]
+_cors_origins_env = os.getenv("CORS_ORIGINS")
+_allow_origins = (
+    [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    if _cors_origins_env
+    else _default_origins
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Coordinates Data Schemas
-class Point2D(BaseModel):
-    x: float
-    y: float
 
-class WallSegment(BaseModel):
-    start: Point2D
-    end: Point2D
-
-class RoomLabel(BaseModel):
-    text: str
-    position: Point2D
-
-# Unified Response Object Schema
-class DetectionResponse(BaseModel):
-    success: bool
-    walls: List[WallSegment]
-    labels: List[RoomLabel]
-
-@app.get("/")
-def read_root():
-    return {"message": "FloorPlan3D Computer Vision Service is running."}
-
-@app.post("/api/auto-detect", response_model=DetectionResponse)
-async def auto_detect_floorplan(file: UploadFile = File(...)):
-    """
-    Receives an uploaded floor plan image, processes vectors through 
-    OpenCV, captures room layout labels via Tesseract OCR, and yields 
-    a unified response object.
-    """
+@app.post("/api/auto-detect")
+async def auto_detect_blueprint(
+    file: UploadFile = File(...),
+    click_x: Optional[int] = Query(None, description="X coordinate for region flood fill"),
+    click_y: Optional[int] = Query(None, description="Y coordinate for region flood fill"),
+    ocr: Optional[int] = Query(None, description="Enable OCR labels (1/0). If omitted, uses server default."),
+):
+    request_id = str(uuid.uuid4())
     try:
-        # Read file payload safely into buffer streams
-        contents = await file.read()
-        
-        # 1. Pipeline execution layers
-        detected_walls = detect_walls_from_image(contents)
-        detected_labels = extract_room_labels(contents)
-        
-        # 2. Return data vectors matching our schema interface specifications
-        return DetectionResponse(
-            success=True, 
-            walls=detected_walls,
-            labels=detected_labels
-        )
+        image_bytes = await file.read()
+        result = process_blueprint(image_bytes, click_x, click_y, ocr=ocr)
+
+        # Robust response shape
+        return {
+            "success": True,
+            "request_id": request_id,
+            "walls": result.get("walls", []) or [],
+            "labels": result.get("labels", []) or [],
+        }
     except Exception as e:
-        print(f"Server Error during parsing pipeline execution: {str(e)}")
-        return DetectionResponse(success=False, walls=[], labels=[])
+        return {
+            "success": False,
+            "request_id": request_id,
+            "error": str(e),
+        }
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)

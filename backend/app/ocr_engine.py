@@ -1,14 +1,21 @@
+import os
 import cv2
 import numpy as np
 import pytesseract
 
-# Explicitly link pytesseract to your physical computer application location
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Configure Tesseract path via env var for portability.
+# Windows example: TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+pytesseract_cmd = os.getenv("TESSERACT_CMD")
+if pytesseract_cmd:
+    pytesseract.pytesseract.tesseract_cmd = pytesseract_cmd
+
 
 def extract_room_labels(image_bytes: bytes) -> list:
     """
-    Processes image bytes to isolate text regions using OpenCV and 
+    Processes image bytes to isolate text regions using OpenCV and
     extracts string metadata using Tesseract OCR.
+
+    Returns: [{ text: string, position: {x:number, y:number} }, ...]
     """
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -18,8 +25,8 @@ def extract_room_labels(image_bytes: bytes) -> list:
     # Target dimensions required by standard EAST models (must be multiples of 32)
     target_w, target_h = 320, 320
     h, w, _ = img.shape
-    rW = w / float(target_w)
-    rH = h / float(target_h)
+    _rW = w / float(target_w)
+    _rH = h / float(target_h)
 
     # Preprocessing: Grayscale & Otsu Thresholding for standard local fallback
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -27,30 +34,29 @@ def extract_room_labels(image_bytes: bytes) -> list:
 
     # Find text contours/bounding boxes (local structural analysis fallback)
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+
     extracted_labels = []
 
     for contour in contours:
         x, y, w_box, h_box = cv2.boundingRect(contour)
-        
+
         # Filter for typical text/label bounding box ratios
         if 10 < w_box < 150 and 10 < h_box < 40:
-            # Crop the word snippet out of the gray image channel
-            roi = gray[y:y+h_box, x:x+w_box]
-            
-            # Run Tesseract OCR configuration engine on the localized region snippet
-            # --psm 6 assumes a single uniform block of text
-            config = ("-l eng --oem 3 --psm 6")
+            roi = gray[y : y + h_box, x : x + w_box]
+
+            config = "-l eng --oem 3 --psm 6"  # single uniform block of text
             try:
                 text = pytesseract.image_to_string(roi, config=config).strip()
-                if len(text) > 2: # Keep clean strings
-                    extracted_labels.append({
-                        "text": text,
-                        "position": {"x": int(x + w_box/2), "y": int(y + h_box/2)}
-                    })
+                if len(text) > 2:
+                    extracted_labels.append(
+                        {
+                            "text": text,
+                            "position": {"x": int(x + w_box / 2), "y": int(y + h_box / 2)},
+                        }
+                    )
             except Exception:
-                # Fallback if tesseract path isn't globally bound locally yet
                 continue
 
     print(f"--- [OCR ENGINE] Located {len(extracted_labels)} floor plan room labels ---")
     return extracted_labels
+

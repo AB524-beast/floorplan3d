@@ -1,15 +1,14 @@
 "use client";
 import React, { useRef, useState, useEffect } from 'react';
 import axios from 'axios';
-import { Upload, Cpu, Trash2, Volume2 } from 'lucide-react';
+import { Upload, Trash2, Crosshair, Sparkles, FileImage, Layers3 } from 'lucide-react';
 
-export default function Canvas2D({ walls, setWalls, labels, setLabels }) {
+export default function Canvas2D({ walls, setWalls, setLabels }) {
   const canvasRef = useRef(null);
   const [backgroundImage, setBackgroundImage] = useState(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [startPoint, setStartPoint] = useState(null);
-  const [currentMousePos, setCurrentMousePos] = useState(null);
-  const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [fileName, setFileName] = useState("");
 
   const width = 600;
   const height = 500;
@@ -23,7 +22,7 @@ export default function Canvas2D({ walls, setWalls, labels, setLabels }) {
     if (backgroundImage) {
       ctx.drawImage(backgroundImage, 0, 0, width, height);
     } else {
-      ctx.strokeStyle = '#e5e7eb';
+      ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = 0.5;
       for (let i = 0; i < width; i += 20) {
         ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke();
@@ -31,7 +30,7 @@ export default function Canvas2D({ walls, setWalls, labels, setLabels }) {
       }
     }
 
-    ctx.strokeStyle = '#1e1b4b'; 
+    ctx.strokeStyle = '#4f46e5'; 
     ctx.lineWidth = 5;
     ctx.lineCap = 'round';
     walls.forEach(wall => {
@@ -40,25 +39,15 @@ export default function Canvas2D({ walls, setWalls, labels, setLabels }) {
       ctx.lineTo(wall.end.x, wall.end.y);
       ctx.stroke();
     });
+  }, [walls, backgroundImage]);
 
-    if (isDrawing && startPoint && currentMousePos) {
-      ctx.strokeStyle = '#3b82f6'; 
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(startPoint.x, startPoint.y);
-      ctx.lineTo(currentMousePos.x, currentMousePos.y);
-      ctx.stroke();
-      ctx.setLineDash([]); 
+  const processFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) {
+      alert("Invalid file format. Please upload a standard image asset.");
+      return;
     }
-  }, [walls, backgroundImage, isDrawing, startPoint, currentMousePos]);
-
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (canvasRef.current) {
-      canvasRef.current.filePayload = file; 
-    }
+    if (canvasRef.current) canvasRef.current.filePayload = file; 
+    setFileName(file.name);
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -69,14 +58,46 @@ export default function Canvas2D({ walls, setWalls, labels, setLabels }) {
     reader.readAsDataURL(file);
   };
 
-  const handleAIAutoDetect = async () => {
+  const handleCanvasClick = async (e) => {
     const file = canvasRef.current?.filePayload;
-    if (!file) {
-      alert("Please upload a blueprint plan first!");
-      return;
+    if (!file) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const clickX = Math.round(e.clientX - rect.left);
+    const clickY = Math.round(e.clientY - rect.top);
+
+    setProcessing(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await axios.post(
+        `http://localhost:8000/api/auto-detect?click_x=${clickX}&click_y=${clickY}&ocr=1`, 
+        formData, 
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      if (response.data.success) {
+        // Replace by default for deterministic results; avoid uncontrolled wall accumulation.
+        setWalls(response.data.walls);
+        setLabels(response.data.labels || []);
+      }
+
+
+    } catch (err) {
+      console.error("Region processing breakdown:", err);
+      alert("Region processing failed. Check backend logs and ensure OCR/tesseract is configured if OCR is enabled.");
+    } finally {
+      setProcessing(false);
     }
 
-    setUploading(true);
+  };
+
+  const handleFullAIAnalysis = async () => {
+    const file = canvasRef.current?.filePayload;
+    if (!file) return;
+
+    setProcessing(true);
     const formData = new FormData();
     formData.append("file", file);
 
@@ -84,108 +105,84 @@ export default function Canvas2D({ walls, setWalls, labels, setLabels }) {
       const response = await axios.post("http://localhost:8000/api/auto-detect", formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
-
       if (response.data.success) {
         setWalls(response.data.walls);
-        setLabels(response.data.labels);
       }
-    } catch (error) {
-      console.error("API error:", error);
-      alert("Failed to reach local backend server.");
+    } catch (err) {
+      alert("Pipeline connectivity failed.");
     } finally {
-      setUploading(false);
+      setProcessing(false);
     }
-  };
-
-  const speakRoomLabel = (text) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); 
-      const utterance = new SpeechSynthesisUtterance(`Reading section: ${text}`);
-      utterance.rate = 0.95;
-      window.speechSynthesis.speak(utterance);
-    }
-  };
-
-  const getMousePos = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    return {
-      x: Math.round(e.clientX - rect.left),
-      y: Math.round(e.clientY - rect.top)
-    };
-  };
-
-  const handleMouseDown = (e) => {
-    setIsDrawing(true);
-    const pos = getMousePos(e);
-    setStartPoint(pos);
-    setCurrentMousePos(pos);
-  };
-
-  const handleMouseMove = (e) => {
-    if (!isDrawing) return;
-    setCurrentMousePos(getMousePos(e));
-  };
-
-  const handleMouseUp = (e) => {
-    if (!isDrawing) return;
-    const endPoint = getMousePos(e);
-    const distance = Math.hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y);
-    if (distance > 5) {
-      setWalls([...walls, { start: startPoint, end: endPoint }]);
-    }
-    setIsDrawing(false);
-    setStartPoint(null);
-    setCurrentMousePos(null);
   };
 
   return (
-    <div className="flex flex-col items-center bg-white p-4 rounded-xl shadow-md border border-gray-100">
-      <div className="flex items-center justify-between w-full mb-3 gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">2D Blueprint Workspace</h2>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg cursor-pointer transition">
-            <Upload size={14} /> Upload Plan
-            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-          </label>
-          <button 
-            onClick={handleAIAutoDetect}
-            disabled={uploading}
-            className={`flex items-center gap-1.5 px-3 py-1.5 ${uploading ? 'bg-indigo-300' : 'bg-indigo-600'} text-white text-xs font-medium rounded-lg transition`}
-          >
-            <Cpu size={14} /> {uploading ? "Analyzing..." : "AI Auto-Detect"}
-          </button>
-          <button onClick={() => { setWalls([]); setLabels([]); setBackgroundImage(null); }} className="p-1.5 bg-red-50 text-red-600 rounded-lg">
-            <Trash2 size={14} />
-          </button>
+    <div className="flex flex-col items-center bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+      <div 
+        onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true); }}
+        onDragLeave={() => setIsDraggingOver(false)}
+        onDrop={(e) => { e.preventDefault(); setIsDraggingOver(false); processFile(e.dataTransfer.files[0]); }}
+        className={`w-full mb-5 p-4 border-2 border-dashed rounded-xl transition-all duration-200 ${
+          isDraggingOver ? 'border-indigo-500 bg-indigo-50/40 scale-[0.99]' : 'border-slate-200 bg-slate-50/50'
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-lg transition-colors ${fileName ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+              <FileImage size={18} />
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-xs font-bold text-slate-700 truncate max-w-[240px]">
+                {fileName ? fileName : "Drag & drop plan blueprint here"}
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">Standard floor plan image format context</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <label className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 shadow-sm cursor-pointer transition">
+              <Upload size={13} /> Browse
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => processFile(e.target.files[0])} />
+            </label>
+            <button 
+              onClick={handleFullAIAnalysis}
+              disabled={processing || !fileName}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white shadow-sm shadow-indigo-100 transition ${
+                processing || !fileName ? 'bg-slate-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}
+            >
+              <Sparkles size={13} /> Analyze All
+            </button>
+            <button 
+              onClick={() => { setWalls([]); setLabels([]); setBackgroundImage(null); setFileName(""); }} 
+              className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="relative border border-gray-300 rounded-lg overflow-hidden max-w-full">
+      <div className="relative border border-slate-200 rounded-xl overflow-hidden bg-slate-50 group">
         <canvas
           ref={canvasRef}
           width={width}
           height={height}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          className="bg-slate-50 cursor-crosshair"
+          onClick={handleCanvasClick}
+          className={`transition-opacity duration-300 ${processing ? 'opacity-40' : 'opacity-100'} ${fileName ? 'cursor-crosshair' : 'cursor-default'}`}
         />
-
-        {labels && labels.map((lbl, idx) => (
-          <button
-            key={idx}
-            onClick={() => speakRoomLabel(lbl.text)}
-            className="absolute z-20 transform -translate-x-1/2 -translate-y-1/2 px-2 py-0.5 bg-indigo-600/90 hover:bg-emerald-600 text-white font-bold rounded shadow-md text-[10px] tracking-wide flex items-center gap-1 border border-white/40 transition active:scale-95"
-            style={{
-              left: `${lbl.position.x}px`,
-              top: `${lbl.position.y}px`
-            }}
-            title={`Click to read: ${lbl.text}`}
-          >
-            <Volume2 size={10} />
-            {lbl.text}
-          </button>
-        ))}
+        {!fileName && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+            <Layers3 size={24} className="text-slate-300 mb-2" />
+            <p className="text-xs font-bold text-slate-400">Viewport Inactive</p>
+            <p className="text-[10px] text-slate-400/80 mt-0.5">Please populate a blueprint configuration above</p>
+          </div>
+        )}
+        {processing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/5 backdrop-blur-[1px]">
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white font-bold text-xs rounded-lg shadow-xl animate-pulse">
+              <Crosshair size={13} className="animate-spin text-indigo-400" /> Computing Extrusions...
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
