@@ -67,11 +67,13 @@ export default function Home() {
         {/* Master Operational Columns Layer */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           <div className="w-full">
+            // Find where Canvas2D is invoked inside frontend/src/app/page.js and ensure both hooks map out:
             <Canvas2D 
               walls={walls} 
               setWalls={setWalls} 
+              labels={labels}
               setLabels={setLabels} 
-            />
+            />  
           </div>
 
           <div className="w-full">
