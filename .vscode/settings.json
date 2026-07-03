@@ -1,8 +1,0 @@
-{
-    "python.analysis.extraPaths": [
-        "./backend/venv/Lib/site-packages"
-    ],
-    "python.autoComplete.extraPaths": [
-        "./backend/venv/Lib/site-packages"
-    ]
-}
